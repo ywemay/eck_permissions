@@ -1,0 +1,12 @@
+name = ECK Easy Permissions
+description = Simplifies the way to administer permissions for ECK
+core = 7.x
+package = Leafbit
+# Added automatically by builddrupalmodule script
+version = 1.0
+
+; Information added by Drupal.org packaging script on 2018-04-26
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "eck_permissions"
+datestamp = "1524714492"

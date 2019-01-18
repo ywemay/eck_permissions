@@ -1,0 +1,227 @@
+<?php
+
+/**
+ * @file: Simplifies the way to administer permissionf for ECK
+*/
+
+/**
+ * Invoke hook_permissions().
+ */
+function eck_permissions_permissions() {
+  return array(
+    'eck permissions grant revoke' => array(
+      'title' => t('Grant/Revoke ECK related permissions'),
+    ),
+  );
+}
+
+/**
+ * Invoke hook_menu().
+ */
+function eck_permissions_menu() {
+
+  foreach (entity_get_info() as $entity_type => $entity_info) {
+    if (!isset($entity_info['module']) || $entity_info['module'] != 'eck') continue;
+      foreach ($entity_info['bundles'] as $bundle_name => $bundle_info) {
+
+         $items['admin/structure/entity-type/' . $entity_type . '/' . $bundle_name . '/permissions'] = array(
+            'title' => 'Permissions',
+            'description' => 'Simple management of entity construciton kit permissions',
+            'page callback' => 'eck_permissions_form_wrapper',
+            'page arguments' => array($entity_type, $bundle_name),
+            'access arguments' => array('eck permissions grant revoke'),
+            'type' => MENU_LOCAL_TASK,
+          );
+      }
+  }
+  $items['admin/people/permissions/eck'] = array(
+    'title' => 'ECK Permissions',
+    'description' => 'Easy management of ECK permissions',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('eck_permissions_all_admin_form'),
+    'access arguments' => array('eck permissions grant revoke'),
+  );
+  return $items;
+}
+
+/**
+ * Function eck_permissions_form_wrapper().
+ */
+function eck_permissions_form_wrapper($type, $bundle) {
+  return drupal_get_form('eck_permissions_admin_form', $type, $bundle);
+}
+
+/**
+ * Function eck_permissions_all_admin_form().
+ */
+function eck_permissions_all_admin_form($form, $form_state) {
+  foreach (entity_get_info() as $entity_type => $entity_info) {
+   if (!isset($entity_info['module']) || $entity_info['module'] != 'eck') continue;
+   $form[$entity_type] = array(
+     '#type' => 'fieldset',
+     '#title' => $entity_info['label'],
+     '#collapsible' => TRUE,
+     '#collapsed' => TRUE,
+     '#tree' => TRUE,
+   );
+   foreach ($entity_info['bundles'] as $bundle_name => $bundle_info) {
+     $form[$entity_type][$bundle_name] = array(
+       '#type' => 'fieldset',
+       '#title' => $bundle_info['label'],
+       '#collapsible' => TRUE,
+       '#collapsed' => TRUE,
+       '#tree' => TRUE,
+     );
+     $form[$entity_type][$bundle_name]['data'] = eck_permissions_admin_form_part($entity_type, $bundle_name);
+   }
+  }
+
+  $form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save'),
+  );
+
+  return $form;
+}
+
+/**
+ * Function eck_permissions_all_admin_form_submit().
+ */
+function eck_permissions_all_admin_form_submit($form, $form_state) {
+  foreach (entity_get_info() as $entity_type => $entity_info) {
+   if (!isset($entity_info['module']) || $entity_info['module'] != 'eck') continue;
+   foreach (array_keys($entity_info['bundles']) as $bundle_name) {
+     eck_permissions_save_for_bundle($entity_type, $bundle_name,
+       $form_state['values'][$entity_type][$bundle_name]['data']['permissions']);
+   }
+  }
+  drupal_set_message(t("Permissions saved.."));
+}
+
+/**
+ * Function eck_permissions_get_keys().
+ */
+function eck_permissions_get_keys() {
+   $keys = array(
+    'view' => 'View',
+    'view own' => 'View Own',
+    'list' => 'List',
+    'add' => 'Create',
+    'edit' => 'Edit',
+    'edit own' => 'Edit Own',
+    'delete' => 'Delete',
+    'delete own' => 'Delete Own',
+  );
+  
+  if (!module_exists('eck_access_own')) {
+    unset($keys['view own']);
+    unset($keys['edit own']);
+    unset($keys['delete own']);
+  }
+
+  if (module_exists('eck_properties')) {
+    $keys ['edit properties'] = 'Properties';
+  }
+  return $keys;
+}
+
+/**
+ * Function eck_permissions_admin_form_part().
+ */
+function eck_permissions_admin_form_part($type, $bundle) {
+   // dpm($form_state['build_info']['args']);
+  $roles = user_roles();
+  $keys = eck_permissions_get_keys();
+
+  $form['permissions'] = array(
+    '#prefix' => '<div id="people">',
+    '#suffix' => '</div>',
+    '#tree' => TRUE,
+    '#theme' => 'table',
+    '#header' => array('role_title' => 'Role') + $keys,
+    '#rows' => array(),
+  );
+
+  $perm = eck_permissions_fetch_permissions($type, $bundle);
+  foreach($roles as $rid => $role) {
+
+    $roletitle = array(
+      '#markup' => $role,
+    );
+    $form['permissions'][$rid]['role_name'] = &$roletitle;
+    $form['permissions']['#rows'][$rid]['role_name'] = array('data' => &$roletitle);
+    unset($roletitle);
+
+    if (!isset($perm[$rid])) $perm[$rid] = array();
+
+    $cols = array();
+    foreach (array_keys($keys) as $k) {
+      $permK = "eck $k $type $bundle entities";
+      $cols[$k] = array(
+        '#type' => 'checkbox',
+        '#id' => "$role-$k",
+        //'#title' => $v,
+        '#default_value' => isset($perm[$rid][$permK]) ? TRUE : FALSE,
+      );
+      $form['permissions'][$rid][$k] = &$cols[$k];
+      $form['permissions']['#rows'][$rid][$k] = array('data' => &$cols[$k]);
+      unset($cols[$k]);
+    }
+
+  }
+  return $form;
+}
+
+/**
+ * Function eck_permissions_admin_form().
+ */
+function eck_permissions_admin_form($form, &$form_state, $type, $bundle) {
+
+  $form = eck_permissions_admin_form_part($type, $bundle);
+  $form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save'),
+  );
+  return $form;
+}
+
+/**
+ * Function eck_permissions_admin_form_submit().
+ */
+function eck_permissions_admin_form_submit($form, &$form_state) {
+  $type = $form_state['build_info']['args'][0];
+  $bundle = $form_state['build_info']['args'][1];
+  eck_permissions_save_for_bundle($type, $bundle, $form_state['values']['permissions']);
+  drupal_set_message(t("Permissions saved.."));
+}
+
+/**
+ * Function eck_permissions_save_for_bundle().
+ */
+function eck_permissions_save_for_bundle($type, $bundle, $permissions) {
+  foreach ($permissions as $rid=>$perm) {
+    $grant = $revoke = array();
+    foreach ($perm as $permK => $val) {
+      $key = "eck $permK $type $bundle entities";
+      $val ? $grant[] = $key : $revoke[] = $key;
+    }
+    if ($grant) user_role_grant_permissions($rid, $grant);
+    if ($revoke) user_role_revoke_permissions($rid, $revoke);
+  }
+}
+
+/**
+ * Function eck_permissions_fetch_permissions($entity_type, $bundle).
+ */
+function eck_permissions_fetch_permissions($entity_type, $bundle) {
+    // Only role IDs with at least one permission assigned will return rows.
+    $result = db_query("SELECT rid, permission FROM {role_permission} WHERE permission LIKE :fetch",
+      array(':fetch' => '% ' . $entity_type . ' ' . $bundle . ' entities'));
+
+    $rz = array();
+    foreach ($result as $row) {
+      $rz[$row->rid][$row->permission] = TRUE;
+    }
+    return $rz;
+}
+
